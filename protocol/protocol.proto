@@ -1,0 +1,18 @@
+syntax = "proto3";
+  
+option java_multiple_files = true;
+option java_package = "io.grpc.examples.protocol";
+option java_outer_classname = "ProtocolProto";
+
+package protocol;
+
+service Processor {
+  rpc ListAddrs (ListAddrsRequest) returns (ListAddrsReply) {}
+}
+
+message ListAddrsRequest {
+}
+
+message ListAddrsReply {
+  repeated string addrs = 1;
+}

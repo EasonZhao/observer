@@ -1,0 +1,188 @@
+package main
+
+import (
+	"fmt"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/larspensjo/config"
+	"github.com/urfave/cli"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+	"net"
+	pb "observer/protocol"
+	"os"
+	"strconv"
+)
+
+const (
+	// DefaultCount address count
+	DefaultCount = 200000
+	// StartPath HD wallet path
+	StartPath = "/0/77"
+	// UseSigWitness sigwitness
+	UseSigWitness = true
+	// DefaultBind defalut bind ip
+	DefaultBind = ":10087"
+)
+
+// Configure config
+type Configure struct {
+	ExtendKey     string
+	Start         string
+	Net           *chaincfg.Params
+	UseSigWitness bool
+	Count         int // 地址数量
+	Bind          string
+}
+
+// Application application
+type Application struct {
+	app       *cli.App
+	config    *Configure
+	addresses map[string]string
+	lastErr   error
+}
+
+// Run run
+func (s *Application) Run(args []string) error {
+	return s.app.Run(args)
+}
+
+// Before run before application action
+func (s *Application) Before(c *cli.Context) error {
+	// load config
+	cfgPath := c.String("config")
+	path, err := Expand(cfgPath)
+	if err != nil {
+		s.lastErr = err
+		return nil
+	}
+	if err := s.loadConfig(path); err != nil {
+		s.lastErr = err
+		return nil
+	}
+	// generate address
+	addrs, err := GenerateAddress(s.config.ExtendKey, s.config.Count, s.config.Start, s.config.Net, s.config.UseSigWitness)
+	if err != nil {
+		s.lastErr = err
+		return nil
+	}
+	s.addresses = make(map[string]string, len(addrs))
+	for i, v := range addrs {
+		s.addresses[v] = strconv.Itoa(i)
+	}
+	return nil
+}
+
+// Action action
+func (s *Application) Action(c *cli.Context) error {
+	if s.lastErr != nil {
+		fmt.Println(s.lastErr)
+	} else {
+		//start grpc
+		lis, err := net.Listen("tcp", s.config.Bind)
+		if err != nil {
+			return err
+		}
+		server := grpc.NewServer()
+		pb.RegisterProcessorServer(server, NewProcessor(s))
+		// register
+		reflection.Register(server)
+		if err := server.Serve(lis); err != nil {
+			fmt.Println(err)
+		}
+	}
+	return nil
+}
+
+func (s *Application) loadConfig(path string) error {
+	cfg, err := config.ReadDefault(path)
+	if err != nil {
+		return err
+	}
+	if cfg.HasOption("app", "bind") {
+		str, err := cfg.String("app", "bind")
+		if err != nil {
+			return err
+		}
+		s.config.Bind = str
+	} else {
+		s.config.Bind = DefaultBind
+	}
+	if cfg.HasOption("app", "key") {
+		key, err := cfg.String("app", "key")
+		if err != nil {
+			return err
+		}
+		s.config.ExtendKey = key
+	} else {
+		return fmt.Errorf("cant find extend key in config file %s", path)
+	}
+	if cfg.HasOption("app", "count") {
+		value, err := cfg.Int("app", "count")
+		if err != nil {
+			return err
+		}
+		s.config.Count = value
+	} else { // default
+		s.config.Count = DefaultCount
+	}
+	if cfg.HasOption("app", "start") {
+		value, err := cfg.String("app", "start")
+		if err != nil {
+			return err
+		}
+		s.config.Start = value
+	} else {
+		s.config.Start = StartPath
+	}
+	if cfg.HasOption("app", "testnet") {
+		value, err := cfg.Bool("app", "testnet")
+		if err != nil {
+			return err
+		}
+		if value {
+			s.config.Net = &chaincfg.TestNet3Params
+		} else {
+			s.config.Net = &chaincfg.MainNetParams
+		}
+	} else {
+		s.config.Net = &chaincfg.MainNetParams
+	}
+	if cfg.HasOption("app", "sigwitness") {
+		value, err := cfg.Bool("app", "sigwitness")
+		if err != nil {
+			return err
+		}
+		s.config.UseSigWitness = value
+	} else {
+		s.config.UseSigWitness = UseSigWitness
+	}
+	return nil
+}
+
+// NewApp new application
+func NewApp() *Application {
+	app := &Application{
+		app:    cli.NewApp(),
+		config: &Configure{},
+	}
+	app.app.Usage = "observer blockchain transaction"
+	app.app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "config, c",
+			Usage: "Load configuration from `FILE`",
+			Value: "./obs.conf",
+		},
+	}
+	app.app.Before = app.Before
+	app.app.Action = app.Action
+	return app
+}
+
+func main() {
+	app := NewApp()
+	err := app.Run(os.Args)
+	if err != nil {
+		panic(err)
+	}
+}

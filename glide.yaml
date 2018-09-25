@@ -1,0 +1,12 @@
+package: observer
+import:
+- package: github.com/urfave/cli
+- package: github.com/btcsuite/btcutil
+  subpackages:
+  - hdkeychain
+- package: github.com/btcsuite/btcd
+  subpackages:
+  - chaincfg
+- package: github.com/larspensjo/config
+- package: github.com/btcsuite/btclog
+- package: golang.org/x/net

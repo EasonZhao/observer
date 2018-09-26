@@ -5,11 +5,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/larspensjo/config"
 	"github.com/urfave/cli"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
-	"net"
-	pb "observer/protocol"
-	"os"
 	"strconv"
 )
 
@@ -40,6 +35,17 @@ type Application struct {
 	config    *Configure
 	addresses map[string]string
 	lastErr   error
+	processor *Processor
+}
+
+// Bind retrun bind ip
+func (s *Application) Bind() string {
+	return s.config.Bind
+}
+
+// Addresses return manager addresses
+func (s *Application) Addresses() map[string]string {
+	return s.addresses
 }
 
 // Run run
@@ -79,16 +85,16 @@ func (s *Application) Action(c *cli.Context) error {
 		fmt.Println(s.lastErr)
 	} else {
 		//start grpc
-		lis, err := net.Listen("tcp", s.config.Bind)
-		if err != nil {
-			return err
-		}
-		server := grpc.NewServer()
-		pb.RegisterProcessorServer(server, NewProcessor(s))
-		// register
-		reflection.Register(server)
-		if err := server.Serve(lis); err != nil {
+		ch := make(chan error, 1)
+		if err := s.processor.AsyncGRPC(&ch); err != nil {
 			fmt.Println(err)
+		} else {
+			err := <-ch
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("application exit")
+			}
 		}
 	}
 	return nil
@@ -160,12 +166,19 @@ func (s *Application) loadConfig(path string) error {
 	return nil
 }
 
+// Stop stop application
+func (s *Application) Stop() {
+	s.processor.StopGRPC()
+}
+
 // NewApp new application
 func NewApp() *Application {
 	app := &Application{
 		app:    cli.NewApp(),
 		config: &Configure{},
 	}
+	app.processor = NewProcessor(app)
+
 	app.app.Usage = "observer blockchain transaction"
 	app.app.Flags = []cli.Flag{
 		cli.StringFlag{
@@ -177,12 +190,4 @@ func NewApp() *Application {
 	app.app.Before = app.Before
 	app.app.Action = app.Action
 	return app
-}
-
-func main() {
-	app := NewApp()
-	err := app.Run(os.Args)
-	if err != nil {
-		panic(err)
-	}
 }

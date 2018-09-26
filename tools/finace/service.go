@@ -28,7 +28,7 @@ func (s *Service) DepositNotify(ctx context.Context, in *pb.DepositRequest) (*pb
 	return &reply, nil
 }
 
-func main() {
+func main1() {
 	lis, err := net.Listen("tcp", ":10889")
 	if err != nil {
 		log.Fatalln(err)

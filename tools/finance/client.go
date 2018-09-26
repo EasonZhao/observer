@@ -5,7 +5,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"log"
-	pb "observer/finace"
+	pb "observer/finance"
 	"os"
 	"time"
 )
@@ -34,7 +34,7 @@ func depositNotify(c *cli.Context) error {
 		log.Fatalf("did not connect: %v", err)
 	}
 	defer conn.Close()
-	client := pb.NewFinaceServiceClient(conn)
+	client := pb.NewFinanceServiceClient(conn)
 
 	// Contact the server and print out its response.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

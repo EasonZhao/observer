@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"log"
 	"net"
-	pb "observer/finace"
+	pb "observer/finance"
 )
 
 // Service comment
@@ -35,7 +35,7 @@ func main1() {
 	}
 	server := grpc.NewServer()
 	s := &Service{}
-	pb.RegisterFinaceServiceServer(server, s)
+	pb.RegisterFinanceServiceServer(server, s)
 	// register
 	reflection.Register(server)
 	if err := server.Serve(lis); err != nil {

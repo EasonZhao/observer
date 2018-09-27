@@ -42,11 +42,17 @@ func GenerateAddress(key string, count int, start string, net *chaincfg.Params, 
 			if err != nil {
 				return nil, err
 			}
-			addr, err := GetWitnessAddress(pubKey, net)
+			pubKeyHash := util.Hash160(pubKey.SerializeCompressed())
+			witAddr, err := util.NewAddressWitnessPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
+			witnessProgram, err := txscript.PayToAddrScript(witAddr)
+			if err != nil {
+				panic(err)
+			}
+			address, err := util.NewAddressScriptHash(witnessProgram, net)
 			if err != nil {
 				return nil, err
 			}
-			result[i] = addr
+			result[i] = address.EncodeAddress()
 		} else {
 			pubHash, err := child.Address(net)
 			if err != nil {

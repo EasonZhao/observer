@@ -3,9 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/larspensjo/config"
 	"github.com/urfave/cli"
+	"log"
+	"os"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -17,6 +21,9 @@ const (
 	UseSigWitness = true
 	// DefaultBind defalut bind ip
 	DefaultBind = ":10087"
+	// DefaultGRPCHost defalut grpc host
+	DefaultGRPCHost = "localhost:10089"
+	addressPath     = "./addresses.txt"
 )
 
 // Configure config
@@ -27,6 +34,12 @@ type Configure struct {
 	UseSigWitness bool
 	Count         int // 地址数量
 	Bind          string
+	GRPCHost      string
+	WalletConfig  struct {
+		URL      string
+		User     string
+		Password string
+	}
 }
 
 // Application application
@@ -36,6 +49,7 @@ type Application struct {
 	addresses map[string]string
 	lastErr   error
 	processor *Processor
+	machine   *ObserverMechine
 }
 
 // Bind retrun bind ip
@@ -73,7 +87,17 @@ func (s *Application) Before(c *cli.Context) error {
 		return nil
 	}
 	s.addresses = make(map[string]string, len(addrs))
+	// write file
+	file, err := os.Create(addressPath)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
 	for i, v := range addrs {
+		_, err := file.WriteString(strings.TrimSpace(v) + "\n")
+		if err != nil {
+			panic(err)
+		}
 		s.addresses[v] = strconv.Itoa(i)
 	}
 	return nil
@@ -82,20 +106,21 @@ func (s *Application) Before(c *cli.Context) error {
 // Action action
 func (s *Application) Action(c *cli.Context) error {
 	if s.lastErr != nil {
-		fmt.Println(s.lastErr)
+		log.Println(s.lastErr)
 	} else {
-		//start grpc
-		ch := make(chan error, 1)
-		if err := s.processor.AsyncGRPC(&ch); err != nil {
-			fmt.Println(err)
-		} else {
-			err := <-ch
-			if err != nil {
-				fmt.Println(err)
-			} else {
-				fmt.Println("application exit")
-			}
+		//start fms
+		config := &rpcclient.ConnConfig{
+			Host:         s.config.WalletConfig.URL,
+			User:         s.config.WalletConfig.User,
+			Pass:         s.config.WalletConfig.Password,
+			HTTPPostMode: true,
+			DisableTLS:   true,
 		}
+		s.machine = NewObserverMechine(1414430, config, s.config.Net, s, s.config.GRPCHost)
+		if err := s.machine.Run(); err != nil {
+			log.Println(err)
+		}
+		return nil
 	}
 	return nil
 }
@@ -163,12 +188,52 @@ func (s *Application) loadConfig(path string) error {
 	} else {
 		s.config.UseSigWitness = UseSigWitness
 	}
+	// load wallet option
+	if cfg.HasOption("wallet", "url") {
+		value, err := cfg.String("wallet", "url")
+		if err != nil {
+			return err
+		}
+		s.config.WalletConfig.URL = value
+	} else {
+		s.config.WalletConfig.URL = "localhost:8332"
+	}
+	if cfg.HasOption("wallet", "user") {
+		value, err := cfg.String("wallet", "user")
+		if err != nil {
+			return err
+		}
+		s.config.WalletConfig.User = value
+	} else {
+		s.config.WalletConfig.User = "obs"
+	}
+	if cfg.HasOption("wallet", "password") {
+		value, err := cfg.String("wallet", "password")
+		if err != nil {
+			return err
+		}
+		s.config.WalletConfig.Password = value
+	} else {
+		s.config.WalletConfig.Password = "obs"
+	}
+
+	// load grpc
+	if cfg.HasOption("grpc", "host") {
+		value, err := cfg.String("grpc", "host")
+		if err != nil {
+			return err
+		}
+		s.config.GRPCHost = value
+	} else {
+		s.config.GRPCHost = DefaultGRPCHost
+	}
 	return nil
 }
 
 // Stop stop application
 func (s *Application) Stop() {
 	s.processor.StopGRPC()
+	s.machine.Stop()
 }
 
 // NewApp new application

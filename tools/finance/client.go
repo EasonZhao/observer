@@ -56,7 +56,7 @@ func depositNotify(c *cli.Context) error {
 	return nil
 }
 
-func main() {
+func main1() {
 	app := newApp()
 	app.Run(os.Args)
 }

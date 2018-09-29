@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/urfave/cli"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -45,7 +46,7 @@ func listAddresses(c *cli.Context) error {
 		log.Fatalf("could not greet: %v", err)
 	}
 	for _, v := range r.Addrs {
-		log.Fatalf(v)
+		fmt.Println(v)
 	}
 	return nil
 }

@@ -39,20 +39,11 @@ func GenerateAddress(key string, count int, start string, net *chaincfg.Params, 
 		}
 		if isSigWit {
 			pubKey, err := child.ECPubKey()
+			address, err := GetWitnessAddress(pubKey, net)
 			if err != nil {
 				return nil, err
 			}
-			pubKeyHash := util.Hash160(pubKey.SerializeCompressed())
-			witAddr, err := util.NewAddressWitnessPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
-			witnessProgram, err := txscript.PayToAddrScript(witAddr)
-			if err != nil {
-				panic(err)
-			}
-			address, err := util.NewAddressScriptHash(witnessProgram, net)
-			if err != nil {
-				return nil, err
-			}
-			result[i] = address.EncodeAddress()
+			result[i] = address
 		} else {
 			pubHash, err := child.Address(net)
 			if err != nil {
@@ -67,12 +58,12 @@ func GenerateAddress(key string, count int, start string, net *chaincfg.Params, 
 // GetWitnessAddress get witness address
 func GetWitnessAddress(pubKey *btcec.PublicKey, net *chaincfg.Params) (string, error) {
 	pubKeyHash := util.Hash160(pubKey.SerializeCompressed())
-	witAddr, err := util.NewAddressWitnessPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
+	witAddr, err := util.NewAddressWitnessPubKeyHash(pubKeyHash, net)
 	witnessProgram, err := txscript.PayToAddrScript(witAddr)
 	if err != nil {
 		return "", err
 	}
-	address, err := util.NewAddressScriptHash(witnessProgram, &chaincfg.MainNetParams)
+	address, err := util.NewAddressScriptHash(witnessProgram, net)
 	if err != nil {
 		return "", err
 	}

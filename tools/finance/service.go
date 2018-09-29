@@ -17,19 +17,16 @@ type Service struct {
 // DepositNotify comment
 func (s *Service) DepositNotify(ctx context.Context, in *pb.DepositRequest) (*pb.DepositReply, error) {
 	reply := pb.DepositReply{}
-	reply.Interrupt = false
-	fmt.Println(in.Timestamp)
-	fmt.Println(in.Symbol)
-	fmt.Println(in.Mining)
-	fmt.Println(in.Confirm)
-	fmt.Println(in.AddressTo)
-	fmt.Println(in.Amount)
-	fmt.Println(in.Txid)
+	if in.Confirm >= 6 {
+		reply.Interrupt = true
+	} else {
+		fmt.Println(in.Confirm)
+	}
 	return &reply, nil
 }
 
-func main1() {
-	lis, err := net.Listen("tcp", ":10889")
+func main() {
+	lis, err := net.Listen("tcp", ":10089")
 	if err != nil {
 		log.Fatalln(err)
 	}

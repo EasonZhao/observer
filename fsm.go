@@ -51,7 +51,7 @@ type ObserverMechine struct {
 
 // DepositTask deposit task
 type DepositTask struct {
-	Symbol    string `json:"sysmbol`
+	Symbol    string `json:"symbol"`
 	AddressTo string `json:"addressto"`
 	Txid      string `json:"txid"`
 	Amount    int64  `json:"amount"`

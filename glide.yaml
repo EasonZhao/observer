@@ -14,3 +14,6 @@ import:
   subpackages:
   - socks
 - package: github.com/looplab/fsm
+- package: github.com/syndtr/goleveldb
+  subpackages:
+  - leveldb

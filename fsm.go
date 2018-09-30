@@ -43,37 +43,57 @@ type ObserverMechine struct {
 	rpcConfig     *rpcclient.ConnConfig
 	isStop        bool
 	net           *chaincfg.Params
-	notifyTxs     map[string]DepositTask
 	GRPCHost      string
+	db            *Database
 	interval      int //如果已经扫描到最新块高，间隔多长时间(s)进行扫描
 	retryInterval int //请求失败重试时间间隔(s)
 }
 
 // DepositTask deposit task
 type DepositTask struct {
-	Symbol    string
-	AddressTo string
-	Txid      string
-	Amount    int64
-	BlockHash string
+	Symbol    string `json:"sysmbol`
+	AddressTo string `json:"addressto"`
+	Txid      string `json:"txid"`
+	Amount    int64  `json:"amount"`
+	BlockHash string `json:"blockhash"`
 }
 
 // Run 启动状态机
-func (s *ObserverMechine) Run() error {
-	s.nextEvent = ESTART
-	for {
-		s.Finite.Event(s.nextEvent)
-		time.Sleep(time.Duration(s.interval) * time.Second)
-		if s.isStop {
-			break
+func (s *ObserverMechine) Run(ch *chan error) {
+	go func() {
+		if s.curHeight == -1 {
+			height, err := s.db.GetLastHeight()
+			if err != nil {
+				*ch <- err
+			}
+			s.curHeight = int64(height)
 		}
-	}
-	return nil
+		// load task
+
+		s.nextEvent = ESTART
+		for {
+			s.Finite.Event(s.nextEvent)
+			//time.Sleep(time.Duration(s.interval) * time.Second)
+			if s.isStop {
+				break
+			}
+		}
+		// stoping
+		if err := s.flush(); err != nil {
+			log.Println(err)
+		}
+		s.db.Close()
+		*ch <- nil
+	}()
 }
 
 // Stop stop machine
 func (s *ObserverMechine) Stop() {
 	s.isStop = true
+}
+
+func (s *ObserverMechine) flush() error {
+	return s.db.UpdataLastHeight(int(s.curHeight))
 }
 
 func (s *ObserverMechine) fetchHeight() (int64, error) {
@@ -105,7 +125,7 @@ func (s *ObserverMechine) fetchBlock(height int64) error {
 	// 	"height": height,
 	// }).Info("fetch block")
 	s.scanBlock(block)
-	//notify
+	// notify
 	s.sendDepositNotify()
 	return nil
 }
@@ -113,8 +133,11 @@ func (s *ObserverMechine) fetchBlock(height int64) error {
 func (s *ObserverMechine) sendDepositNotify() {
 	urlTemp := "http://%s:%s@%s"
 	url := fmt.Sprintf(urlTemp, s.rpcConfig.User, s.rpcConfig.Pass, s.rpcConfig.Host)
-	interruptTx := []string{}
-	for _, task := range s.notifyTxs {
+	notifyTxs, err := s.db.GetTaskList()
+	if err != nil {
+		panic(err)
+	}
+	for _, task := range notifyTxs {
 		exblock, err := exGetBlock(url, task.BlockHash)
 		if err != nil {
 			log.Println(err)
@@ -144,11 +167,10 @@ func (s *ObserverMechine) sendDepositNotify() {
 			continue
 		}
 		if r.Interrupt {
-			interruptTx = append(interruptTx, task.Txid)
+			if err := s.db.DeleteTask(task); err != nil {
+				panic(err)
+			}
 		}
-	}
-	for _, v := range interruptTx {
-		delete(s.notifyTxs, v)
 	}
 }
 
@@ -164,20 +186,19 @@ func (s *ObserverMechine) fetchHeightState(e *fsm.Event) {
 		s.nextEvent = EFETCHERROR
 		return
 	}
-	if height > s.curHeight {
+	if height >= s.curHeight {
 		s.desHeight = height
 		//logger.Infof("%d blocks need fetch", height-s.curHeight)
 		log.Printf("%d blocks need fetch\n", height-s.curHeight)
 		s.nextEvent = EBLOCK
 		return
 	}
-	time.Sleep(10 * time.Minute)
+	time.Sleep(10 * time.Second)
 }
 
 func (s *ObserverMechine) fetchBlockState(e *fsm.Event) {
-	for s.curHeight < s.desHeight {
-		height := s.curHeight + 1
-		if err := s.fetchBlock(height); err != nil {
+	for s.curHeight <= s.desHeight && !s.isStop {
+		if err := s.fetchBlock(s.curHeight); err != nil {
 			// logger.WithFields(logrus.Fields{
 			// 	"err": err,
 			// }).Warning("fetch block failure")
@@ -185,7 +206,7 @@ func (s *ObserverMechine) fetchBlockState(e *fsm.Event) {
 			s.nextEvent = EFETCHERROR
 			return
 		}
-		s.curHeight = height
+		s.curHeight++
 	}
 	s.nextEvent = EHEIGHT
 }
@@ -230,10 +251,14 @@ func (s *ObserverMechine) scanBlock(block *wire.MsgBlock) {
 						Amount:    out.Value,
 						BlockHash: block.BlockHash().String(),
 					}
-					if _, ok := s.notifyTxs[tx.TxHash().String()]; ok {
-						// TODO log
+					if ok, err := s.db.Exist(task); err != nil {
+						panic(err)
+					} else if !ok {
+						if err := s.db.AddTask(task); err != nil {
+							panic(err)
+						}
 					} else {
-						s.notifyTxs[tx.TxHash().String()] = task
+						// TODO log
 					}
 				}
 			} else {
@@ -244,7 +269,7 @@ func (s *ObserverMechine) scanBlock(block *wire.MsgBlock) {
 }
 
 // NewObserverMechine 创建状态机
-func NewObserverMechine(height int, config *rpcclient.ConnConfig, net *chaincfg.Params, mgr AddressManager, host string) *ObserverMechine {
+func NewObserverMechine(height int, config *rpcclient.ConnConfig, db *Database, net *chaincfg.Params, mgr AddressManager, host string) *ObserverMechine {
 	o := ObserverMechine{
 		rpcConfig:     config,
 		curHeight:     int64(height),
@@ -254,8 +279,8 @@ func NewObserverMechine(height int, config *rpcclient.ConnConfig, net *chaincfg.
 		isStop:        false,
 		net:           net,
 		addrMgr:       mgr,
-		notifyTxs:     make(map[string]DepositTask, 0),
 		GRPCHost:      host,
+		db:            db,
 	}
 	o.Finite = fsm.NewFSM(
 		SSTOPED,

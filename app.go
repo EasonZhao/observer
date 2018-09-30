@@ -50,6 +50,9 @@ type Application struct {
 	lastErr   error
 	processor *Processor
 	machine   *ObserverMechine
+	scanBegin int
+	dataDir   string
+	db        *Database
 }
 
 // Bind retrun bind ip
@@ -100,6 +103,17 @@ func (s *Application) Before(c *cli.Context) error {
 		}
 		s.addresses[v] = strconv.Itoa(i)
 	}
+	// load database
+	tmp, err := Expand(s.dataDir)
+	if err != nil {
+		panic(err)
+	}
+	db, err := NewDatabase(tmp)
+	if err != nil {
+		s.lastErr = err
+		return nil
+	}
+	s.db = db
 	return nil
 }
 
@@ -116,8 +130,10 @@ func (s *Application) Action(c *cli.Context) error {
 			HTTPPostMode: true,
 			DisableTLS:   true,
 		}
-		s.machine = NewObserverMechine(1414430, config, s.config.Net, s, s.config.GRPCHost)
-		if err := s.machine.Run(); err != nil {
+		s.machine = NewObserverMechine(s.scanBegin, config, s.db, s.config.Net, s, s.config.GRPCHost)
+		ch := make(chan error, 1)
+		s.machine.Run(&ch)
+		if err := <-ch; err != nil {
 			log.Println(err)
 		}
 		return nil
@@ -248,8 +264,20 @@ func NewApp() *Application {
 	app.app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "config, c",
-			Usage: "Load configuration from `FILE`",
+			Usage: "load configuration from `FILE`",
 			Value: "./obs.conf",
+		},
+		cli.StringFlag{
+			Name:        "datadir, d",
+			Usage:       "secify data path",
+			Value:       "~/.obs",
+			Destination: &app.dataDir,
+		},
+		cli.IntFlag{
+			Name:        "height",
+			Usage:       "secify scan block height",
+			Value:       -1,
+			Destination: &app.scanBegin,
 		},
 	}
 	app.app.Before = app.Before

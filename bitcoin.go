@@ -12,6 +12,7 @@ import (
 
 //GenerateAddress generate bitcoin address
 func GenerateAddress(key string, count int, start string, net *chaincfg.Params, isSigWit bool) ([]string, error) {
+	hkStart := uint32(0x80000000)
 	master, err := hdkeychain.NewKeyFromString(key)
 	if err != nil {
 		return nil, err
@@ -25,7 +26,7 @@ func GenerateAddress(key string, count int, start string, net *chaincfg.Params, 
 		if err != nil {
 			return nil, err
 		}
-		child, err := master.Child(uint32(i))
+		child, err := master.Child(hkStart + uint32(i))
 		if err != nil {
 			return nil, err
 		}
@@ -33,7 +34,7 @@ func GenerateAddress(key string, count int, start string, net *chaincfg.Params, 
 	}
 	result := make([]string, count)
 	for i := 0; i < count; i++ {
-		child, err := master.Child(uint32(i))
+		child, err := master.Child(hkStart + uint32(i))
 		if err != nil {
 			return nil, err
 		}
